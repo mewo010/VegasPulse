@@ -1,0 +1,7 @@
+{
+  "name": "VegasPulse",
+  "description": "Cross-platform virtual casino with 1v1 private duel rooms by code, verified real player leaderboards, real-time Roulette, Coinflip, Slots, and 7-day streak rewards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
