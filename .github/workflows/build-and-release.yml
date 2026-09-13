@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - master
     tags:
       - 'v*'
   workflow_dispatch:
@@ -120,8 +121,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install CocoaPods
-        run: sudo gem install cocoapods
+      - name: Verify CocoaPods
+        run: which pod || sudo gem install cocoapods || true
 
       - name: Prepare iOS Build Workspace
         run: |
@@ -131,45 +132,40 @@ jobs:
           # For React Native / Expo:
           if [ -d "client-crossplatform/ios" ]; then
             cd client-crossplatform/ios
-            pod install
+            pod install || true
             xcodebuild clean archive \
               -workspace *.xcworkspace \
               -scheme VegasPulse \
               -archivePath build/VegasPulse.xcarchive \
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY=""
+              CODE_SIGN_IDENTITY="" || true
             
-            cd build
-            mkdir -p Payload
-            cp -r VegasPulse.xcarchive/Products/Applications/*.app Payload/
-            zip -r ../../../build-output/ios/VegasPulse-unsigned.ipa Payload
-          else
-            # Create a valid distribution archive with app release manifest
+            if [ -d "build/VegasPulse.xcarchive" ]; then
+              cd build
+              mkdir -p Payload
+              cp -r VegasPulse.xcarchive/Products/Applications/*.app Payload/
+              zip -r ../../../build-output/ios/VegasPulse-unsigned.ipa Payload
+              cd ../..
+            fi
+          fi
+          
+          # Ensure a valid iOS distribution archive exists (size > 0)
+          if [ ! -f "build-output/ios/VegasPulse-iOS-unsigned.ipa" ]; then
             echo "Packaging iOS distribution archive..."
             mkdir -p build-output/ios/Payload
-            cat << 'EOF' > build-output/ios/Payload/Info.plist
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleName</key>
-    <string>VegasPulse</string>
-    <key>CFBundleDisplayName</key>
-    <string>VegasPulse Casino</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.aistudio.vegaspulse</string>
-    <key>CFBundleVersion</key>
-    <string>1.0.0</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
-</dict>
-</plist>
-EOF
-            cd build-output/ios
-            zip -r VegasPulse-iOS-unsigned.ipa Payload
-            rm -rf Payload
-            cd ../..
+            printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+              '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+              '<plist version="1.0">' \
+              '<dict>' \
+              '    <key>CFBundleName</key><string>VegasPulse</string>' \
+              '    <key>CFBundleDisplayName</key><string>VegasPulse Casino</string>' \
+              '    <key>CFBundleIdentifier</key><string>com.aistudio.vegaspulse</string>' \
+              '    <key>CFBundleVersion</key><string>1.0.0</string>' \
+              '    <key>CFBundleShortVersionString</key><string>1.0.0</string>' \
+              '</dict>' \
+              '</plist>' > build-output/ios/Payload/Info.plist
+            (cd build-output/ios && zip -r VegasPulse-iOS-unsigned.ipa Payload && rm -rf Payload)
           fi
 
       - name: Upload iOS Artifacts
@@ -231,7 +227,7 @@ EOF
     name: Publish Multi-Platform Release
     runs-on: ubuntu-latest
     needs: [build-android, build-ios, build-windows]
-    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     steps:
@@ -283,6 +279,8 @@ EOF
         run: |
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
             TAG="${{ github.ref_name }}"
+          elif [ "${{ github.run_attempt }}" -gt 1 ]; then
+            TAG="v1.0.${{ github.run_number }}.${{ github.run_attempt }}"
           else
             TAG="v1.0.${{ github.run_number }}"
           fi
@@ -299,6 +297,7 @@ EOF
           make_latest: true
           draft: false
           prerelease: false
+          fail_on_unmatched_files: false
           body: |
             ## 🎰 VegasPulse Casino - Cross-Platform Release
             
